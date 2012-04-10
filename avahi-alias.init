@@ -1,0 +1,104 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:			avahi-alias
+# Required-Start:	$remote_fs
+# Required-Stop:	 $remote_fs
+# Should-Start:		 $syslog avahi-daemon
+# Should-Stop:		 $syslog
+# Default-Start:	 2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description: Avahi mDNS/DNS-SD CNAME Daemon
+# Description:		 Zeroconf daemon for configuring cnames through DNS-SD automatically
+### END INIT INFO
+
+#set -e
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+DESC="Avahi mDNS/DNS-SD CNAME Daemon"
+NAME="avahi-alias"
+DAEMON="/usr/sbin/$NAME"
+SCRIPTNAME=/etc/init.d/$NAME
+PIDFILE="/var/run/${NAME}.pid"
+
+# Gracefully exit if the package has been removed.
+test -x $DAEMON || exit 0
+
+. /lib/lsb/init-functions
+
+# Include avahi-daemon defaults if available.
+test -f /etc/default/avahi-daemon && . /etc/default/avahi-daemon
+
+DISABLE_TAG="/var/run/avahi-daemon/disabled-for-unicast-local"
+
+#
+#		 Function that starts the daemon/service.
+#
+d_start() {
+	if [ -e $DISABLE_TAG -a "$AVAHI_DAEMON_DETECT_LOCAL" != "0" ]; then 
+		# Disabled because of the existance of an unicast .local domain
+		log_warning_msg "avahi-daemon disabled because there is a unicast .local domain"
+		exit 0;
+	fi;
+
+	start-stop-daemon --start --pidfile $PIDFILE --exec $DAEMON \
+		--chuid avahi --group avahi --chdir /etc/avahi/services \
+		--background --make-pidfile
+	return $?
+}
+
+#
+#		 Function that stops the daemon/service.
+#
+d_stop() {
+	start-stop-daemon --stop --pidfile $PIDFILE
+	return $?
+}
+
+#
+#		 Function that check the status of the daemon/service.
+#
+d_status() {
+	if [ -f "$PIDFILE" ]; then
+		PID=`cat $PIDFILE`
+		if ps -fp "$PID" | grep -q "$PID"; then
+			[ "$ACTION" = "status" ] && echo "$DESC is running with PID $PID."
+			RETVAL=0
+		else
+			[ "$ACTION" = "status" ] && echo "Found PID file for $DESC, but process is NOT running."
+			RETVAL=2
+		fi
+	else
+		[ "$ACTION" = "status" ] && echo "$DESC is NOT running."
+		RETVAL=1
+	fi
+	return $RETVAL
+}
+
+ACTION="$1"
+case "$1" in
+	start)
+		log_daemon_msg "Starting $DESC" "$NAME"
+		d_start
+		log_end_msg $?
+		;;
+	stop)
+		log_daemon_msg "Stopping $DESC" "$NAME"
+		d_stop
+		log_end_msg $?
+		;;
+	restart)
+		log_daemon_msg "Restarting $DESC" "$NAME"
+		$DAEMON -c && d_stop
+		d_start
+		log_end_msg $?
+		;;
+	status)
+		d_status
+	;;
+	*)
+		echo "Usage: $SCRIPTNAME {start|stop|restart|status}" >&2
+		exit 1
+		;;
+esac
+
+exit 0
